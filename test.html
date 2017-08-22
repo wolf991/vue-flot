@@ -311,7 +311,7 @@
                                 <toolbar v-model="selection_mode"></toolbar>
                                 <div :id=id style="width: 800px; height: 400px;"></div>
                             </div>
-                            <chart-legend @filter="filter_legend" v-model="legend"></chart-legend>
+                            <chart-legend v-model="legend"></chart-legend>
                             <div :id="'tooltip' + id" :style="tooltip_style"></div>
                         </div>
                     </div>
@@ -338,7 +338,6 @@
                             this.options.selection.mode = null;
                             this.options.pan.interactive = true;
                             this.select_mode = 'pan';
-                            console.log(this.select_mode);
                         }
                     }.bind(this));
                     window.addEventListener('keyup', function(event) {
@@ -353,6 +352,9 @@
                 watch: {
                     selection_mode: function(newVal) {
                         console.log(newVal);
+                    },
+                    legend: function(newVal) {
+                        this.draw();
                     },
                     'options.selection.mode': function(newVal) {
                         if (this.plot) {
@@ -480,7 +482,7 @@
                 },
                 template: `
                     <div style="align-self: flex-start;">
-                        <input v-model=filter_value placeholder="filter me" @change="filter_records">
+                        <input v-model=filter_value placeholder="filter me" @input="filter_records">
                         <div style="max-height: 400px; overflow: scroll; overflow-x: hidden; padding: 10px;">
                             <legend-item
                                 v-for="(item, key) in legend"
@@ -528,11 +530,12 @@
                         this.$emit('filter', this.legend);
                     },
                     filter_records: function() {
-                        var legend_update = this.legend;
+                        // we need to make a copy of the legend object, it is passed by reference
+                        var legend_update = JSON.parse(JSON.stringify(this.legend)); // deep copy
                         $.each(this.legend, function(label) {
                             legend_update[label].visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
                         }.bind(this));
-                        this.$emit('filter', legend_update);
+                        this.$emit('change', legend_update);
                     },
                 }
             });

@@ -1,0 +1,596 @@
+<html>
+    <body>
+        <head>
+        <script src='vue.js'></script>
+        <script src='jquery.js'></script>
+        <script src='./flot/jquery.flot.js'></script>
+        <!-- <script src='./flot/jquery.flot.selection.js'></script> -->
+        <!-- <script src='./flot/jquery.flot.navigate.js'></script> -->
+        <script src='./flot.pan.js'></script>
+        <script src='./flot.selection.custom.js'></script>
+        <script src='./flot/jquery.flot.time.js'></script>
+        <script src='./moment.js'></script>
+        <script src='./bootstrap-datetimepicker.min.js'></script>
+        <link rel="stylesheet" href="./css/bootstrap.min.css">  
+        <link rel="stylesheet" href="./css/bootstrap-datetimepicker.min.css"> 
+        <link rel="stylesheet" href="./loader.css">
+        </head>
+        <div id="app">
+            <timeline-selector></timeline-selector>
+        </div>
+        <script>
+            Vue.component('timeline-selector', {
+                data: function() {
+                    var now = moment();
+                    var color = "#999";
+                    return {
+                        canvas_id: 'canvas' + this._uid.toString(),
+                        start_t: now.clone().subtract(2.8, 'years'),
+                        end_t: now.clone(),
+                        time_from: now.clone().subtract(1, 'days'),
+                        time_to: now.clone(),
+                        time_periods: [
+                            {value: '1-hours', text: 'hour'},
+                            {value: '1-days', text: 'day'},
+                            {value: '3-days', text: '3 days'},
+                            {value: '1-weeks', text: 'week'},
+                            {value: '2-weeks', text: '2 weeks'},
+                            {value: '1-months', text: 'month'},
+                            {value: '3-months', text: '3 months'},
+                            {value: '6-months', text: 'half year'},
+                            {value: '1-years', text: 'year'},
+                        ],
+                        selected_period: '1-hours',
+                        show_type: "period",
+                        style: {
+                            margin_lr: 5,
+                            margin_tb: 5,
+                            year_color: '#a2c2f5',
+                            year_font: "bold 18px Verdana,Calibri,sans-serif",
+                            month_color: '#666666',
+                            month_font: "10px Verdana,Calibri,sans-serif",
+                            axis_color: color,
+                            below_axis_color: '#ffffff'
+                        }
+                    };
+                },
+                watch: {
+                    selected_period: function(new_val) {
+                        // console.log(new_val);
+                    },
+                    show_type: function(new_val) {
+                        console.log(new_val);
+                    },
+                    time_from: function(new_val) {
+                        // console.log(new_val);
+                    },
+                    time_to: function(new_val) {
+                        // console.log(new_val);
+                    }
+                },
+                template: `
+                    <div>
+                        <div id="chart_filter_timeline">
+                            <div class="period chart_filter_group">
+                                <input class="radio1" type="radio" value="period" v-model="show_type" />
+                                <label for="timeline">Show last</label>
+                                <select v-model="selected_period" class="chart_filter_values" @change="update_time_period($event.target.value)">
+                                    <option v-for="period in time_periods" :value="period.value">
+                                        {{ period.text }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="range chart_filter_group">
+                                <input class="radio1" type="radio" value="timerange" v-model="show_type"/>
+                                <label for="timeline">Show data between</label>
+                                <datetimepicker
+                                    :time_from="time_from" 
+                                    :time_to="time_to"
+                                    @time_from_change="update_time_from"
+                                    @time_to_change="update_time_to"
+                                ></datetimepicker>
+                            </div>
+                            <div class="timeline_container">
+                                <canvas :id="canvas_id" width="1000" height="50"></canvas>
+                            </div>
+                        </div>
+                        <chart :time_from="time_from" :time_to="time_to"></chart>
+                    </div>
+                `,
+                mounted: function() {
+                    this.draw();
+                },
+                methods: {
+                    update_time_period: function(period) {
+                        this.show_type = 'period';
+                        var amount_unit = period.split('-');
+                        this.time_to = moment() 
+                        this.time_from = moment().subtract(amount_unit[0], amount_unit[1]);
+                    },
+                    update_time_from: function(time_from) {
+                        this.time_from = time_from;
+                        this.show_type = 'timerange';
+                    },
+                    update_time_to: function(time_to) {
+                        this.time_to = time_to;
+                        this.show_type = 'timerange';
+                    },
+                    draw: function() {
+                        // start_x and end_x are pixel coordinates from left side of canvas
+                        // draw background and grid
+                        var canvas = document.getElementById(this.canvas_id);
+                        var ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.lineWidth = 1.0;
+                        ctx.textAlign = 'center';
+                        ctx.imageSmoothingEnabled = false;
+                        // axis and labels:
+                        this.draw_ticks_and_labels(ctx, canvas.width, canvas.height); 
+                        ctx.fillStyle = 'rgba(225,125,125,0.3)';
+                        ctx.fillRect(0, 0, 500, 300);
+                    },
+                    draw_ticks_and_labels: function(ctx, canvas_width, canvas_height) {
+                        var start_year = this.start_t.year();
+                        var start_month = this.start_t.month();
+                        var current_month = start_month;
+                        var current_year = start_year;
+                        var month_width = this.month_width(canvas_width);
+                        
+                        // axis:
+                        // lines are antialiased by default and look blurry, so we use rects to draw them
+                        ctx.fillStyle = this.style.axis_color;
+                        ctx.fillRect(
+                            this.style.margin_lr, canvas_height - 15 - this.style.margin_tb,
+                            canvas_width - 2 * this.style.margin_lr, 1
+                        );
+
+                        while (true) {
+                            current_month ++;
+                            if (current_month > 11) {
+                                current_month = current_month % 12;
+                                current_year ++;
+                            }
+                            var d = moment({y: current_year, month: current_month});
+                            var x = this.time2x(d, canvas_width);
+                            if (isNaN(x)) {
+                                break;
+                            }
+
+                            // draw the tick:
+                            if (current_month === 0) // start of the year - whole height tick
+                                ctx.fillRect(x, this.style.margin_tb, 1, canvas_height -2 * this.style.margin_tb);
+                            else
+                                ctx.fillRect(x, canvas_height - 18 - this.style.margin_tb, 1, 3);
+
+                            // display year:
+                            if (current_month == 6) {
+                                ctx.font = this.style.year_font;
+                                ctx.fillStyle = this.style.year_color;
+                                ctx.fillText("" + current_year, x, canvas_height / 2 - this.style.margin_tb / 2 - 1);
+                            }
+                            // display month:
+                            ctx.font = this.style.month_font;
+                            ctx.fillStyle = this.style.month_color;
+                            ctx.fillText(d.format('MMM'), x + month_width/2, canvas_height - 2 - this.style.margin_tb);
+                        }
+                    },
+                    time2x: function(t, canvas_width) {
+                        if (t.isBefore(this.start_t) || t.isAfter(this.end_t)) {
+                            return Number.NaN;
+                        }
+                        var timeline_span = this.end_t - this.start_t;
+                        var time_offset = t - this.start_t;
+                        return Math.round(
+                            this.style.margin_lr + (canvas_width - 2 * this.style.margin_lr) * (time_offset / timeline_span)
+                        );
+                    },
+                    month_width: function(canvas_width) {
+                        return Math.round(30*24*3600 * (canvas_width - 2*this.style.margin_lr) / (this.end_t.unix() - this.start_t.unix()));
+                    }
+                },
+            });
+            Vue.component('datetimepicker', {
+                props: ['time_from', 'time_to'],
+                data: function() {
+                    return {
+                        dp_from_id: 'datetimepicker_from' + this._uid.toString(),
+                        dp_to_id: 'datetimepicker_to' + this._uid.toString(),
+                        dp_options: {
+                            sideBySide: true,
+                            keepInvalid: true,
+                            format: 'YYYY/MM/DD HH:mm',
+                            useCurrent: false,
+                            showClose: true,
+                            showClear: true,
+                            showTodayButton: true,
+                            toolbarPlacement: 'bottom',
+                            debug: false,
+                        },
+                    };
+                },
+                template: `
+                    <div class="container" style="width: 500px; margin: 0px 0px 0px 0px;">
+                        <div class="row">
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" :id="dp_from_id" />
+                            </div>
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" :id="dp_to_id" />
+                            </div>
+                        </div>
+                    </div>
+                `,
+                mounted: function() {
+                    var dp_from_selector = '#' + this.dp_from_id;
+                    var dp_to_selector = '#' + this.dp_to_id;
+                    $(dp_from_selector).datetimepicker(this.dp_options)
+                        .data('DateTimePicker').date(this.time_from)
+                        .maxDate(this.time_to);
+                    $(dp_to_selector).datetimepicker(this.dp_options)
+                        .data('DateTimePicker').date(this.time_to)
+                        .minDate(this.time_from);
+                    // link the pickers together 
+                    $(dp_from_selector).on('dp.change', function(e) {
+                        $(dp_to_selector).data('DateTimePicker').minDate(e.date);
+                    });
+                    $(dp_to_selector).on('dp.change', function(e) {
+                        $(dp_from_selector).data('DateTimePicker').maxDate(e.date);
+                    });
+                    $(dp_from_selector).on('dp.hide', function(e) {
+                        // sometimes it happens that the internal date of the picker
+                        // is updated, but it is not shown in the input filed,
+                        // so we update the value here again manually, to reassure
+                        // that internal and displayed date are in sync.
+                        $(dp_from_selector).data('DateTimePicker').date(e.date);
+                        this.$emit('time_from_change', e.date);
+                    }.bind(this));
+                    $(dp_to_selector).on('dp.hide', function(e) {
+                        $(dp_to_selector).data('DateTimePicker').date(e.date);
+                        this.$emit('time_to_change', e.date);
+                    }.bind(this));
+                },
+            }),
+            Vue.component('chart', {
+                props: ['time_from', 'time_to'],
+                data: function() {
+                    return {
+                        id: this._uid.toString(),
+                        plot: null,
+                        data_request: null,
+                        layout: {
+                            autosize: false,
+                            width: 1000,
+                            hight: 500,
+                        },
+                        options: {
+                            series: {
+                                lines: {
+                                    show: true,
+                                },
+                                points: {
+                                    show: true,
+                                },
+                            },
+                            selection: {
+                                mode: 'xy',
+                            },
+                            pan: {
+                                interactive: false,
+                            },
+                            grid: {
+                                hoverable: true,
+                            },
+                            xaxis: {
+                                mode: 'time',
+                            },
+                        },
+                        dataset: {
+                        },
+                        min_x: 0,
+                        max_x: 0,
+                        legend: {
+                        },
+                        loading: false,
+                        filter: '',
+                        tooltip_style: {
+                            position: "absolute",
+                            display: "none",
+                            border: "1px solid #fdd",
+                            padding: "2px",
+                            "background-color": "#fee",
+                            opacity: 0.80,
+                        },
+                        selection_mode: 'zoom',
+                    };
+                },
+                template: `
+                    <div class="center" style="flex-wrap: wrap; width: 1000px; min-height: 400px; border: 2px solid black; margin: 20px; padding: 20px">
+                        <loader v-show="loading"></loader>
+                        <div v-show="!loading" class="center">
+                            <div>
+                                <toolbar v-model="selection_mode"></toolbar>
+                                <div :id=id style="width: 800px; height: 400px;"></div>
+                            </div>
+                            <chart-legend @filter="filter_legend" v-model="legend"></chart-legend>
+                            <div :id="'tooltip' + id" :style="tooltip_style"></div>
+                        </div>
+                    </div>
+                `,
+                mounted: function() {
+                    // set listeners for flot events with jquery
+                    $('#' + this.id).on({
+                        plotpan: function(event, plot) {
+                        },
+                        plothover: function(event, pos, item) {
+                            this.show_tooltip(pos, item);
+                        }.bind(this),
+                        plotselected: function(event, ranges) {
+                            this.zoom_in(event, ranges);
+                        }.bind(this),
+                        dblclick: function(event) {
+                            this.zoom_out(event);
+                        }.bind(this),
+                    }),
+
+                    // add event listener for ctrl key, it controls zooming/panning of the graphs
+                    window.addEventListener('keydown', function(event) {
+                        if (event.keyCode == 17) {
+                            this.options.selection.mode = null;
+                            this.options.pan.interactive = true;
+                            this.select_mode = 'pan';
+                            console.log(this.select_mode);
+                        }
+                    }.bind(this));
+                    window.addEventListener('keyup', function(event) {
+                        if (event.keyCode == 17) {
+                            this.options.selection.mode = 'xy';
+                            this.options.pan.interactive = false;
+                            this.select_mode = 'zoom';
+                        }
+                    }.bind(this));
+                    this.draw_initial();
+                },
+                watch: {
+                    selection_mode: function(newVal) {
+                        console.log(newVal);
+                    },
+                    'options.selection.mode': function(newVal) {
+                        if (this.plot) {
+                            this.plot.getOptions().selection.mode = newVal;
+                        }
+                    },
+                    'options.pan.interactive': function(newVal) {
+                        if (this.plot) {
+                            this.plot.getOptions().pan.interactive = newVal;
+                        }
+                    },
+                    time_from: function(newVal) {
+                        // this.clear_chart_canvas();
+                        this.draw_initial();
+                    },
+                    time_to: function(newVal) {
+                        // this.clear_chart_canvas();
+                        this.draw_initial();
+                    },
+                },
+                methods: {
+                    clear_chart_canvas: function() {
+                        var canvas = this.plot.getCanvas();
+                        var context = canvas.getContext('2d');
+                        context.clearRect(0, 0, canvas.width, canvas.height);
+                    },
+                    draw_initial: function() {
+                        this.loading = true;
+                        // setTimeout(function() {
+                            // if we have an ongoing request abort it
+                            if (this.data_request) {
+                                this.data_request.abort();
+                            }
+                            this.data_request = $.ajax({
+                                type: 'POST',
+                                dataType: 'json',
+                                context: this,
+                                url: 'http://localhost:5000/chartdata',
+                                data: {
+                                    time_from: this.time_from.unix(),
+                                    time_to: this.time_to.unix(),
+                                },
+                            })
+                            .done(function(response){
+                                var data = response.data.map(function(el, index) {
+                                    this.dataset[el.label] = {data: el.avg, label: el.label, color: index}; 
+                                    return {data: el.avg, label: el.label};
+                                }.bind(this));
+                                this.loading = false;
+                                // wait one tick, so the loader is hidden before the plot is rendered
+                                // otherwise the loader affects the rendering of the plot
+                                this.$nextTick(function() {
+                                    this.plot = $.plot('#' + this.id, data, this.options);
+                                    // set legend data
+                                    $.each(this.plot.getData(), function(_, val) {
+                                        Vue.set(this.legend, val.label, {visible: true, color: val.color});
+                                    }.bind(this));
+                                    // save the original x axes limits for future reference (restoring pan and zoom)
+                                    var plot_options = this.plot.getOptions();
+                                    this.min_x = plot_options.xaxes[0].min;
+                                    this.max_x = plot_options.xaxes[0].max;
+                                });
+                            });
+                        // }.bind(this), 200);
+                    },
+                    draw: function() {
+                        var data = [];
+                        $.each(this.dataset, function(_, val) {
+                            if (this.legend[val.label].visible) {
+                                data.push(val);
+                            }
+                        }.bind(this));
+                        setTimeout(function() {
+                            this.plot.setData(data);
+                            this.plot.setupGrid();
+                            this.plot.draw();
+                        }.bind(this), 200);
+                    },
+                    zoom_in: function(event, ranges) {
+                        $.each(this.plot.getXAxes(), function(_, axis) {
+                            var opts = axis.options;
+                            opts.min = ranges.xaxis.from;
+                            opts.max = ranges.xaxis.to;
+                        });
+                        this.plot.setupGrid();
+                        this.plot.draw();
+                        this.plot.clearSelection();
+                    },
+                    zoom_out: function() {
+                        var plot_options = this.plot.getOptions();
+                        plot_options.xaxes[0].min = this.min_x;
+                        plot_options.xaxes[0].max = this.max_x;
+                        this.draw();
+                    },
+                    show_tooltip: function(pos, item) {
+                        var tooltip = $('#' + 'tooltip' + this.id);
+                        if (item) {
+                            var x = item.datapoint[0];
+                            var x_str = $.plot.formatDate(new Date(x), "%Y-%m-%d");
+                            var y = item.datapoint[1].toFixed(2);
+                            tooltip.html(x_str + ' = ' + y)
+                                .css({top: item.pageY+5, left: item.pageX+5, 'background-color': this.legend[item.series.label].color})
+                                .fadeIn(200);
+                        } else {
+                            tooltip.hide();
+                        }
+                    },
+                    filter_legend: function(legend_update) {
+                        Vue.set(this, 'legend', legend_update);
+                        this.draw();
+                    },
+                },
+            });
+
+            Vue.component('chart-legend', {
+                model: {
+                    prop: 'legend',
+                    event: 'change',
+                },
+                props: ['legend'],
+                data: function() {
+                    return {
+                        filter_value: '',
+                    };
+                },
+                template: `
+                    <div style="align-self: flex-start;">
+                        <input v-model=filter_value placeholder="filter me" @change="filter_records">
+                        <div style="max-height: 400px; overflow: scroll; overflow-x: hidden; padding: 10px;">
+                            <legend-item
+                                v-for="(item, key) in legend"
+                                :label="key"
+                                :key="key"
+                                :color="item.color"
+                                v-model="legend[key].visible"
+                                @change="change"
+                            ></legend-item>
+                            <legend-item
+                                v-for="key in sorted_keys"
+                                :label="key"
+                                :key="key"
+                                :color="legend[key].color"
+                                v-model="legend[key].visible"
+                                @change="change"
+                            ></legend-item>
+                        </div>
+                    </div>
+                `,
+                computed: {
+                    sorted_keys: function() {
+                        var keys = [];
+                        var unselected_keys =[]
+                        // first we list all the selected series
+                        // and then the unselected ones
+                        for (k in this.legend) {
+                            if (this.legend[k].visible) {
+                                keys.push(k);
+                            } else {
+                                unselected_keys.push(k);
+                            }
+                        }
+                        keys.sort();
+                        unselected_keys.sort();
+                        if (this.filter_value === '') {
+                            return keys.concat(unselected_keys);
+                        } else {
+                            return keys;
+                        }
+                    }
+                },
+                methods: {
+                    change: function() {
+                        this.$emit('filter', this.legend);
+                    },
+                    filter_records: function() {
+                        var legend_update = this.legend;
+                        $.each(this.legend, function(label) {
+                            legend_update[label].visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
+                        }.bind(this));
+                        this.$emit('filter', legend_update);
+                    },
+                }
+            });
+
+            Vue.component('legend-item', {
+                model: {
+                    prop: 'checked',
+                    event: 'change',
+                },
+                props: ['label', 'checked', 'color'],
+                template: `
+                    <div>
+                        <input type="checkbox" :checked=checked @change="change($event.target.checked)" :style="{outline: color + 'solid 3px'}">
+                        <label for=label>{{ label }}</label>
+                    </div>
+                `,
+                methods: {
+                    change: function(value) {
+                        this.$emit('change', value);
+                    }
+                }
+            }),
+            Vue.component('toolbar', {
+                model: {
+                    prop: 'selection_mode',
+                    event: 'change',
+                },
+                props: ['selection_mode'],
+                template: `
+                    <div class="switch-field">
+                        <input type="radio" id="zoom" name="select-mode" value="zoom"
+                            :checked="selection_mode == 'zoom'" @change="update_selection_mode($event.target.value)" />
+                        <label for="zoom">Zoom</label>
+                        <input type="radio" id="pan"  name="select-mode" value="pan"
+                            :checked="selection_mode == 'pan'" @change="update_selection_mode($event.target.value)"/>
+                        <label for="pan">Pan</label>
+                    </div>
+                `,
+                methods: {
+                    update_selection_mode: function(value) {
+                        this.$emit('change', value);
+                    },
+                },
+            }),
+            Vue.component('loader', {
+                template: `
+                    <div class="center loader1">
+                        <div class="center loader2">
+                            <div class="center loader3">
+                                <div class="loader4"></div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+            })
+            new Vue({
+                el: '#app',
+            });
+        </script>
+    </body>
+</html>

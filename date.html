@@ -1,0 +1,77 @@
+<html>
+    <head>
+        <script src='./vue.js'></script>
+        <script src='./jquery.js'></script>
+        <script src='./moment.js'></script>
+         <!-- <script src='./collapse.js'></script>  -->
+         <!-- <script src='./transition.js'></script>  -->
+        <script src='./bootstrap-datetimepicker.min.js'></script>
+        <link rel="stylesheet" href="./css/bootstrap.min.css">  
+        <link rel="stylesheet" href="./css/bootstrap-datetimepicker.min.css"> 
+        <!-- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"> -->
+    </head>
+    <body>
+        <div id="app">
+            <datetimepicker></datetimepicker>
+        </div>
+        <script>
+            Vue.component('datetimepicker', {
+                data: function() {
+                    return {
+                        dp_from_id: 'datetimepicker_from' + this._uid.toString(),
+                        dp_to_id: 'datetimepicker_to' + this._uid.toString(),
+                        dp_options: {
+                            sideBySide: true,
+                            keepInvalid: true,
+                            format: 'YYYY/MM/DD HH:mm',
+                            useCurrent: false,
+                            showClose: true,
+                            showClear: true,
+                            showTodayButton: true,
+                            toolbarPlacement: 'bottom',
+                            debug: false,
+                        },
+                    };
+                },
+                template: `
+                    <div class="container" style="width: 500px; margin: 0px 0px 0px 0px;">
+                        <div class="row">
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" :id="dp_from_id" />
+                            </div>
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" :id="dp_to_id" />
+                            </div>
+                        </div>
+                    </div>
+                `,
+                mounted: function() {
+                    var dp_from_selector = '#' + this.dp_from_id;
+                    var dp_to_selector = '#' + this.dp_to_id;
+                    $(dp_from_selector).datetimepicker(this.dp_options);
+                    $(dp_to_selector).datetimepicker(this.dp_options);
+                    // link the pickers together 
+                    $(dp_from_selector).on('dp.change', function(e) {
+                        $(dp_to_selector).data('DateTimePicker').minDate(e.date);
+                    });
+                    $(dp_to_selector).on('dp.change', function(e) {
+                        $(dp_from_selector).data('DateTimePicker').maxDate(e.date);
+                    });
+                    $(dp_from_selector).on('dp.hide', function(e) {
+                        // sometimes it happens that the internal date of the picker
+                        // is updated, but it is not shown in the input filed,
+                        // so we update the value here again manually, to reassure
+                        // that internal and displayed date are in sync.
+                        $(dp_from_selector).data('DateTimePicker').date(e.date);
+                    });
+                    $(dp_to_selector).on('dp.hide', function(e) {
+                        $(dp_to_selector).data('DateTimePicker').date(e.date);
+                    });
+                },
+            }),
+            new Vue({
+                el: '#app',
+            });
+        </script>
+    </body>
+</html>

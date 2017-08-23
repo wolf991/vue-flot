@@ -471,25 +471,26 @@
 
             Vue.component('chart-legend', {
                 model: {
-                    prop: 'legend',
+                    prop: 'legend_prop',
                     event: 'change',
                 },
-                props: ['legend'],
+                props: ['legend_prop'],
                 data: function() {
                     return {
                         filter_value: '',
+                        legend: {},
                     };
                 },
                 template: `
                     <div style="align-self: flex-start;">
-                        <input v-model=filter_value placeholder="filter me" @input="filter_records">
+                        <input v-model=filter_value placeholder="filter me">
                         <div style="max-height: 400px; overflow: scroll; overflow-x: hidden; padding: 10px;">
                             <legend-item
                                 v-for="(item, key) in legend"
                                 :label="key"
                                 :key="key"
                                 :color="item.color"
-                                v-model="legend[key].visible"
+                                v-model="item.visible"
                                 @change="change"
                             ></legend-item>
                             <legend-item
@@ -498,11 +499,24 @@
                                 :key="key"
                                 :color="legend[key].color"
                                 v-model="legend[key].visible"
-                                @change="change"
                             ></legend-item>
                         </div>
                     </div>
                 `,
+                watch: {
+                    legend_prop: function() {
+                        // we need to make a copy of the legend object, it is passed by reference
+                        this.legend = JSON.parse(JSON.stringify(this.legend_prop)); // deep copy
+                    },
+                    filter_value: function() {
+                        $.each(this.legend, function(label, val) {
+                            val.visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
+                        }.bind(this));
+                        this.$emit('change', this.legend);
+                    },
+                    legend: function(newVal) {
+                    },
+                },
                 computed: {
                     sorted_keys: function() {
                         var keys = [];
@@ -527,15 +541,7 @@
                 },
                 methods: {
                     change: function() {
-                        this.$emit('filter', this.legend);
-                    },
-                    filter_records: function() {
-                        // we need to make a copy of the legend object, it is passed by reference
-                        var legend_update = JSON.parse(JSON.stringify(this.legend)); // deep copy
-                        $.each(this.legend, function(label) {
-                            legend_update[label].visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
-                        }.bind(this));
-                        this.$emit('change', legend_update);
+                        this.$emit('change', this.legend);
                     },
                 }
             });
@@ -548,12 +554,12 @@
                 props: ['label', 'checked', 'color'],
                 template: `
                     <div>
-                        <input type="checkbox" :checked=checked @change="change($event.target.checked)" :style="{outline: color + 'solid 3px'}">
+                        <input type="checkbox" :checked="checked" @change="updateValue($event.target.checked)":style="{outline: color + 'solid 3px'}">
                         <label for=label>{{ label }}</label>
                     </div>
                 `,
                 methods: {
-                    change: function(value) {
+                    updateValue: function(value) {
                         this.$emit('change', value);
                     }
                 }

@@ -335,36 +335,24 @@
                     // add event listener for ctrl key, it controls zooming/panning of the graphs
                     window.addEventListener('keydown', function(event) {
                         if (event.keyCode == 17) {
-                            this.options.selection.mode = null;
-                            this.options.pan.interactive = true;
-                            this.select_mode = 'pan';
+                            this.selection_mode = this.selection_mode === 'zoom' ? 'pan' : 'zoom';
+                            this.toggle_selection_mode();
                         }
                     }.bind(this));
                     window.addEventListener('keyup', function(event) {
                         if (event.keyCode == 17) {
-                            this.options.selection.mode = 'xy';
-                            this.options.pan.interactive = false;
-                            this.select_mode = 'zoom';
+                            this.selection_mode = this.selection_mode === 'zoom' ? 'pan' : 'zoom';
+                            this.toggle_selection_mode();
                         }
                     }.bind(this));
                     this.draw_initial();
                 },
                 watch: {
                     selection_mode: function(newVal) {
-                        console.log(newVal);
+                        this.toggle_selection_mode();
                     },
                     legend: function(newVal) {
                         this.draw();
-                    },
-                    'options.selection.mode': function(newVal) {
-                        if (this.plot) {
-                            this.plot.getOptions().selection.mode = newVal;
-                        }
-                    },
-                    'options.pan.interactive': function(newVal) {
-                        if (this.plot) {
-                            this.plot.getOptions().pan.interactive = newVal;
-                        }
                     },
                     time_from: function(newVal) {
                         // this.clear_chart_canvas();
@@ -376,6 +364,19 @@
                     },
                 },
                 methods: {
+                    toggle_selection_mode: function() {
+                        if (this.selection_mode === 'pan') {
+                            if (this.plot) {
+                                this.plot.getOptions().selection.mode = null;
+                                this.plot.getOptions().pan.interactive = true;
+                            }
+                        } else if (this.selection_mode === 'zoom') {
+                            if (this.plot) {
+                                this.plot.getOptions().selection.mode = 'xy';
+                                this.plot.getOptions().pan.interactive = false;
+                            }
+                        }
+                    },
                     clear_chart_canvas: function() {
                         var canvas = this.plot.getCanvas();
                         var context = canvas.getContext('2d');

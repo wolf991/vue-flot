@@ -17,13 +17,15 @@ class ChartData(Resource):
     def post(self):
         args = parser.parse_args()
         data = {'data': []}
+        diff = int(args['time_to']) - int(args['time_from'])
+        step = diff / 30
         for i in range(20):
             series = {
                 'avg': [],
                 'min': [],
                 'max': [],
             }
-            for timestamp in range(int(args['time_from']), int(args['time_to']), 60 * 60):
+            for timestamp in range(int(args['time_from']), int(args['time_to']), step):
                 series['avg'].append([timestamp * 1000, randint(0, 10)])
                 series['min'].append([timestamp * 1000, randint(0, 10)])
                 series['max'].append([timestamp * 1000, randint(0, 10)])

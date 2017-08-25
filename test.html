@@ -25,10 +25,14 @@
                     var color = "#999";
                     return {
                         canvas_id: 'canvas' + this._uid.toString(),
-                        start_t: now.clone().subtract(2.8, 'years'),
-                        end_t: now.clone(),
-                        time_from: now.clone().subtract(1, 'days'),
-                        time_to: now.clone(),
+                        start_x: 0,
+                        end_x: 0,
+                        timeline_start_time: now.clone().subtract(2.8, 'years'),
+                        timeline_end_time: now.clone(),
+                        chart_time_from: now.clone().subtract(1, 'days'),
+                        chart_time_to: now.clone(),
+                        picker_time_from: now.clone().subtract(1, 'days'),
+                        picker_time_to: now.clone(),
                         time_periods: [
                             {value: '1-hours', text: 'hour'},
                             {value: '1-days', text: 'day'},
@@ -54,20 +58,6 @@
                         }
                     };
                 },
-                watch: {
-                    selected_period: function(new_val) {
-                        // console.log(new_val);
-                    },
-                    show_type: function(new_val) {
-                        console.log(new_val);
-                    },
-                    time_from: function(new_val) {
-                        // console.log(new_val);
-                    },
-                    time_to: function(new_val) {
-                        // console.log(new_val);
-                    }
-                },
                 template: `
                     <div>
                         <div id="chart_filter_timeline">
@@ -84,8 +74,8 @@
                                 <input class="radio1" type="radio" value="timerange" v-model="show_type"/>
                                 <label for="timeline">Show data between</label>
                                 <datetimepicker
-                                    :time_from="time_from" 
-                                    :time_to="time_to"
+                                    :time_from="picker_time_from" 
+                                    :time_to="picker_time_to"
                                     @time_from_change="update_time_from"
                                     @time_to_change="update_time_to"
                                 ></datetimepicker>
@@ -94,29 +84,87 @@
                                 <canvas :id="canvas_id" width="1000" height="50"></canvas>
                             </div>
                         </div>
-                        <chart :time_from="time_from" :time_to="time_to"></chart>
+                        <chart :time_from="chart_time_from" :time_to="chart_time_to"></chart>
                     </div>
                 `,
                 mounted: function() {
                     this.draw();
+                    // register listener on timeline
+                    // - bind mousemove handler so it updates interval as needed
+                    // - use setInterval to redraw canvas periodically
+                    // - bind mouseup handler so it stops the whole process
+                    $('#' + this.canvas_id).on('mousedown', function(e) {
+                        var canvas = $('#' + this.canvas_id)[0];
+                        this.start_x = e.pageX - canvas.offsetLeft; // relative to canvas 
+                        this.end_x = this.start_x + 1;
+                        $(document).on('mousemove.timelineselector', function(e) {
+                            var canvas = $('#' + this.canvas_id)[0];
+                            var position = e.pageX - canvas.offsetLeft;
+                            position = Math.min(position, canvas.width - this.style.margin_lr);
+                            position = Math.max(position, this.style.margin_lr);
+                            this.end_x = position;
+                            this.should_repaint = true;
+                            return false;
+                        }.bind(this));
+                        $(document).on('mouseup.timelineselector', function(e) {
+                            // unbind yourself and mousemove handler
+                            $(document).off('mouseup.timelineselector mousemove.timelineselector');
+                            // stop redrawing
+                            clearInterval(this.redraw_interval);
+                            // notify about time change
+                            var canvas = $('#' + this.canvas_id)[0];
+                            var start_time = this.x2time(this.start_x, canvas.width);
+                            var end_time = this.x2time(this.end_x, canvas.width);
+                            this.update_time_from(start_time);
+                            // wait one tick before updating time, so the min/max dates get
+                            // set correctly
+                            this.update_time_from(start_time);
+                            this.update_time_to(end_time);
+                            return false;
+                        }.bind(this));
+                        // every 50ms this gets called to redraw canvas with information
+                        // from current_drag_info:
+                        this.redraw_interval = setInterval(function() {
+                            if (!this.should_repaint) {
+                                return;
+                            }
+                            this.draw();
+                            this.should_repaint = false;
+                        }.bind(this), 50);
+                        this.draw();
+                        this.should_repaint = true;
+                    }.bind(this));
+                },
+                watch: {
+                    selected_period: function(new_val) {
+                    },
+                    show_type: function(type) {
+                        if (type === 'period') {
+                            this.update_time_period(this.selected_period);
+                        } else if (type ==='timerange') {
+                            this.update_time_from(this.picker_time_from);
+                            this.update_time_to(this.picker_time_to);
+                        }
+                    },
                 },
                 methods: {
                     update_time_period: function(period) {
                         this.show_type = 'period';
                         var amount_unit = period.split('-');
-                        this.time_to = moment() 
-                        this.time_from = moment().subtract(amount_unit[0], amount_unit[1]);
+                        this.chart_time_to = moment() 
+                        this.chart_time_from = moment().subtract(amount_unit[0], amount_unit[1]);
                     },
                     update_time_from: function(time_from) {
-                        this.time_from = time_from;
+                        this.picker_time_from = time_from;
+                        this.chart_time_from = time_from;
                         this.show_type = 'timerange';
                     },
                     update_time_to: function(time_to) {
-                        this.time_to = time_to;
+                        this.picker_time_to = time_to;
+                        this.chart_time_to = time_to;
                         this.show_type = 'timerange';
                     },
                     draw: function() {
-                        // start_x and end_x are pixel coordinates from left side of canvas
                         // draw background and grid
                         var canvas = document.getElementById(this.canvas_id);
                         var ctx = canvas.getContext('2d');
@@ -126,12 +174,22 @@
                         ctx.imageSmoothingEnabled = false;
                         // axis and labels:
                         this.draw_ticks_and_labels(ctx, canvas.width, canvas.height); 
+                        // draw drag area
+                        // start_x and end_x are pixel coordinates from left side of canvas
                         ctx.fillStyle = 'rgba(225,125,125,0.3)';
-                        ctx.fillRect(0, 0, 500, 300);
+                        var left = Math.min(this.start_x, this.end_x);
+                        var width = Math.abs(this.end_x - this.start_x);
+                        ctx.fillRect(left, 0, width, canvas.height);
+                        // display the "now" circle:
+                        ctx.fillStyle = this.style.below_axis_color;
+                        ctx.beginPath();
+                        ctx.arc(canvas.width - this.style.margin_lr - 1, canvas.height - 15 - this.style.margin_tb,
+                                1.0, 0, 2 * Math.PI);
+                        ctx.stroke();
                     },
                     draw_ticks_and_labels: function(ctx, canvas_width, canvas_height) {
-                        var start_year = this.start_t.year();
-                        var start_month = this.start_t.month();
+                        var start_year = this.timeline_start_time.year();
+                        var start_month = this.timeline_start_time.month();
                         var current_month = start_month;
                         var current_year = start_year;
                         var month_width = this.month_width(canvas_width);
@@ -175,17 +233,26 @@
                         }
                     },
                     time2x: function(t, canvas_width) {
-                        if (t.isBefore(this.start_t) || t.isAfter(this.end_t)) {
+                        if (t.isBefore(this.timeline_start_time) || t.isAfter(this.timeline_end_time)) {
                             return Number.NaN;
                         }
-                        var timeline_span = this.end_t - this.start_t;
-                        var time_offset = t - this.start_t;
+                        var timeline_span = this.timeline_end_time - this.timeline_start_time;
+                        var time_offset = t - this.timeline_start_time;
                         return Math.round(
                             this.style.margin_lr + (canvas_width - 2 * this.style.margin_lr) * (time_offset / timeline_span)
                         );
                     },
+                    x2time: function(x, canvas_width) {
+                        // take into account left margin:
+                        x = x - this.style.margin_lr;
+                        // silently convert all x values out of space to in-space:
+                        x = Math.max(x, 0);
+                        var usable_width = canvas_width - 2 * this.style.margin_lr;
+                        x = Math.min(x, usable_width);
+                        return moment(this.timeline_start_time + x * (this.timeline_end_time - this.timeline_start_time) / usable_width)
+                    },
                     month_width: function(canvas_width) {
-                        return Math.round(30*24*3600 * (canvas_width - 2*this.style.margin_lr) / (this.end_t.unix() - this.start_t.unix()));
+                        return Math.round(30*24*3600 * (canvas_width - 2*this.style.margin_lr) / (this.timeline_end_time.unix() - this.timeline_start_time.unix()));
                     }
                 },
             });
@@ -207,6 +274,14 @@
                             debug: false,
                         },
                     };
+                },
+                watch: {
+                    time_from: function(time) {
+                        $('#' + this.dp_from_id).data('DateTimePicker').date(time);
+                    },
+                    time_to: function(time) {
+                        $('#' + this.dp_to_id).data('DateTimePicker').date(time);
+                    },
                 },
                 template: `
                     <div class="container" style="width: 500px; margin: 0px 0px 0px 0px;">
@@ -311,7 +386,7 @@
                                 <toolbar v-model="selection_mode"></toolbar>
                                 <div :id=id style="width: 800px; height: 400px;"></div>
                             </div>
-                            <chart-legend @filter="filter_legend" v-model="legend"></chart-legend>
+                            <chart-legend v-model="legend"></chart-legend>
                             <div :id="'tooltip' + id" :style="tooltip_style"></div>
                         </div>
                     </div>
@@ -335,34 +410,24 @@
                     // add event listener for ctrl key, it controls zooming/panning of the graphs
                     window.addEventListener('keydown', function(event) {
                         if (event.keyCode == 17) {
-                            this.options.selection.mode = null;
-                            this.options.pan.interactive = true;
-                            this.select_mode = 'pan';
-                            console.log(this.select_mode);
+                            this.selection_mode = this.selection_mode === 'zoom' ? 'pan' : 'zoom';
+                            this.toggle_selection_mode();
                         }
                     }.bind(this));
                     window.addEventListener('keyup', function(event) {
                         if (event.keyCode == 17) {
-                            this.options.selection.mode = 'xy';
-                            this.options.pan.interactive = false;
-                            this.select_mode = 'zoom';
+                            this.selection_mode = this.selection_mode === 'zoom' ? 'pan' : 'zoom';
+                            this.toggle_selection_mode();
                         }
                     }.bind(this));
                     this.draw_initial();
                 },
                 watch: {
                     selection_mode: function(newVal) {
-                        console.log(newVal);
+                        this.toggle_selection_mode();
                     },
-                    'options.selection.mode': function(newVal) {
-                        if (this.plot) {
-                            this.plot.getOptions().selection.mode = newVal;
-                        }
-                    },
-                    'options.pan.interactive': function(newVal) {
-                        if (this.plot) {
-                            this.plot.getOptions().pan.interactive = newVal;
-                        }
+                    legend: function(newVal) {
+                        this.draw();
                     },
                     time_from: function(newVal) {
                         // this.clear_chart_canvas();
@@ -374,6 +439,19 @@
                     },
                 },
                 methods: {
+                    toggle_selection_mode: function() {
+                        if (this.selection_mode === 'pan') {
+                            if (this.plot) {
+                                this.plot.getOptions().selection.mode = null;
+                                this.plot.getOptions().pan.interactive = true;
+                            }
+                        } else if (this.selection_mode === 'zoom') {
+                            if (this.plot) {
+                                this.plot.getOptions().selection.mode = 'xy';
+                                this.plot.getOptions().pan.interactive = false;
+                            }
+                        }
+                    },
                     clear_chart_canvas: function() {
                         var canvas = this.plot.getCanvas();
                         var context = canvas.getContext('2d');
@@ -469,25 +547,26 @@
 
             Vue.component('chart-legend', {
                 model: {
-                    prop: 'legend',
+                    prop: 'legend_prop',
                     event: 'change',
                 },
-                props: ['legend'],
+                props: ['legend_prop'],
                 data: function() {
                     return {
                         filter_value: '',
+                        legend: {},
                     };
                 },
                 template: `
                     <div style="align-self: flex-start;">
-                        <input v-model=filter_value placeholder="filter me" @change="filter_records">
+                        <input v-model=filter_value placeholder="filter me">
                         <div style="max-height: 400px; overflow: scroll; overflow-x: hidden; padding: 10px;">
                             <legend-item
                                 v-for="(item, key) in legend"
                                 :label="key"
                                 :key="key"
                                 :color="item.color"
-                                v-model="legend[key].visible"
+                                v-model="item.visible"
                                 @change="change"
                             ></legend-item>
                             <legend-item
@@ -496,11 +575,24 @@
                                 :key="key"
                                 :color="legend[key].color"
                                 v-model="legend[key].visible"
-                                @change="change"
                             ></legend-item>
                         </div>
                     </div>
                 `,
+                watch: {
+                    legend_prop: function() {
+                        // we need to make a copy of the legend object, it is passed by reference
+                        this.legend = JSON.parse(JSON.stringify(this.legend_prop)); // deep copy
+                    },
+                    filter_value: function() {
+                        $.each(this.legend, function(label, val) {
+                            val.visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
+                        }.bind(this));
+                        this.$emit('change', this.legend);
+                    },
+                    legend: function(newVal) {
+                    },
+                },
                 computed: {
                     sorted_keys: function() {
                         var keys = [];
@@ -525,14 +617,7 @@
                 },
                 methods: {
                     change: function() {
-                        this.$emit('filter', this.legend);
-                    },
-                    filter_records: function() {
-                        var legend_update = this.legend;
-                        $.each(this.legend, function(label) {
-                            legend_update[label].visible = label.toLowerCase().indexOf(this.filter_value) !== -1;
-                        }.bind(this));
-                        this.$emit('filter', legend_update);
+                        this.$emit('change', this.legend);
                     },
                 }
             });
@@ -545,12 +630,12 @@
                 props: ['label', 'checked', 'color'],
                 template: `
                     <div>
-                        <input type="checkbox" :checked=checked @change="change($event.target.checked)" :style="{outline: color + 'solid 3px'}">
+                        <input type="checkbox" :checked="checked" @change="updateValue($event.target.checked)":style="{outline: color + 'solid 3px'}">
                         <label for=label>{{ label }}</label>
                     </div>
                 `,
                 methods: {
-                    change: function(value) {
+                    updateValue: function(value) {
                         this.$emit('change', value);
                     }
                 }

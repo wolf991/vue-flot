@@ -93,7 +93,7 @@
 }
 
 .switch-field input:checked + label {
-   background-color: #a2c2f5;
+  background-color: #a2c2f5;
   box-shadow: none;
   cursor: default;
 }

@@ -85,6 +85,7 @@
                             </div>
                         </div>
                         <chart :time_from="chart_time_from" :time_to="chart_time_to"></chart>
+                        <chart :time_from="chart_time_from" :time_to="chart_time_to"></chart>
                     </div>
                 `,
                 mounted: function() {
@@ -641,6 +642,13 @@
                 }
             }),
             Vue.component('toolbar', {
+                data: function() {
+                    return {
+                        zoom_id: 'zoom' + this._uid.toString(),
+                        pan_id: 'pan' + this._uid.toString(),
+                        name: 'select-mode' + this._uid.toString(),
+                    }
+                },
                 model: {
                     prop: 'selection_mode',
                     event: 'change',
@@ -648,12 +656,12 @@
                 props: ['selection_mode'],
                 template: `
                     <div class="switch-field">
-                        <input type="radio" id="zoom" name="select-mode" value="zoom"
+                        <input type="radio" :id="zoom_id" :name="name" value="zoom"
                             :checked="selection_mode == 'zoom'" @change="update_selection_mode($event.target.value)" />
-                        <label for="zoom">Zoom</label>
-                        <input type="radio" id="pan"  name="select-mode" value="pan"
+                        <label :for="zoom_id">Zoom</label>
+                        <input type="radio" :id="pan_id"  :name="name" value="pan"
                             :checked="selection_mode == 'pan'" @change="update_selection_mode($event.target.value)"/>
-                        <label for="pan">Pan</label>
+                        <label :for="pan_id">Pan</label>
                     </div>
                 `,
                 methods: {

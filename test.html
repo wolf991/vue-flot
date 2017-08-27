@@ -74,10 +74,14 @@
                                 <input class="radio1" type="radio" value="timerange" v-model="show_type"/>
                                 <label for="timeline">Show data between</label>
                                 <datetimepicker
-                                    :time_from="picker_time_from" 
-                                    :time_to="picker_time_to"
-                                    @time_from_change="update_time_from"
-                                    @time_to_change="update_time_to"
+                                    v-model="picker_time_from"
+                                    :min_date="false"
+                                    :max_date="picker_time_to"
+                                ></datetimepicker>
+                                <datetimepicker
+                                    v-model="picker_time_to"
+                                    :min_date="picker_time_from"
+                                    :max_date="false"
                                 ></datetimepicker>
                             </div>
                             <div class="timeline_container">
@@ -137,6 +141,12 @@
                     }.bind(this));
                 },
                 watch: {
+                    picker_time_from: function(new_val) {
+                        console.log(new_val);
+                    },
+                    picker_time_to: function(new_val) {
+                        console.log(new_val);
+                    },
                     selected_period: function(new_val) {
                     },
                     show_type: function(type) {
@@ -258,6 +268,53 @@
                 },
             });
             Vue.component('datetimepicker', {
+                model: {
+                    prop: 'date',
+                    event: 'date_change',
+                },
+                props: ['date', 'min_date', 'max_date'],
+                data: function() {
+                    return {
+                        dp_id: 'datetimepicker' + this._uid.toString(),
+                        options: {
+                            sideBySide: true,
+                            format: 'YYYY/MM/DD HH:mm',
+                            useCurrent: false,
+                            showClose: true,
+                            showClear: true,
+                            showTodayButton: true,
+                            toolbarPlacement: 'bottom',
+                            debug: false,
+                        },
+                    };
+                },
+                template: `
+                    <div class="col-md-5">
+                        <input type="text" class="form-control" :id="dp_id" />
+                    </div>
+                `,
+                watch: {
+                    min_date: function(date) {
+                        $('#' + this.dp_id).data('DateTimePicker')
+                            .minDate(date);
+                    },
+                    max_date: function(date) {
+                        $('#' + this.dp_id).data('DateTimePicker')
+                            .maxDate(date);
+                    },
+                },
+                mounted: function() {
+                    $('#' + this.dp_id).datetimepicker(this.options)
+                        .data('DateTimePicker')
+                        .date(this.date)
+                        .maxDate(this.max_date)
+                        .minDate(this.min_date);
+                    $('#' + this.dp_id).on('dp.hide', function(e) {
+                        this.$emit('date_change', e.date);
+                    }.bind(this));
+                },
+            }),
+            Vue.component('datetimepicker_from_to', {
                 props: ['time_from', 'time_to'],
                 data: function() {
                     return {

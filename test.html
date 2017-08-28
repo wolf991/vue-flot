@@ -16,36 +16,52 @@
         <link rel="stylesheet" href="./loader.css">
         </head>
         <div id="app">
-            <timeline-selector></timeline-selector>
+            <div id="chart_filter_timeline">
+                <div class="period chart_filter_group">
+                    <input class="radio1" type="radio" value="period" v-model="time_selection_type" @change="period_selected"/>
+                    <label for="timeline">Show last</label>
+                    <select v-model="selected_period" class="chart_filter_values" @change="period_changed">
+                        <option v-for="period in time_periods" :value="period.value">
+                            {{ period.text }}
+                        </option>
+                    </select>
+                </div>
+                <div class="range chart_filter_group">
+                    <input class="radio1" type="radio" value="timerange" v-model="time_selection_type" @change="timerange_selected"/>
+                    <label for="timeline">Show data between</label>
+                    <datetimepicker
+                        v-model="picker_time_from"
+                        :min_date="false"
+                        :max_date="picker_time_to"
+                    ></datetimepicker>
+                    <datetimepicker
+                        v-model="picker_time_to"
+                        :min_date="picker_time_from"
+                        :max_date="false"
+                    ></datetimepicker>
+                <timeline-selector
+                    :date_from="chart_date_from"
+                    :date_to="chart_date_to"
+                    @timeline_selector_update="timeline_selector_update"
+                ></timeline-selector>
+                </div>
+            </div>
+            <chart :date_from="chart_date_from" :date_to="chart_date_to"></chart>
+            <chart :date_from="chart_date_from" :date_to="chart_date_to"></chart>
         </div>
+
         <script>
             Vue.component('timeline-selector', {
+                props: ['date_from', 'date_to'],
                 data: function() {
                     var now = moment();
                     var color = "#999";
                     return {
                         canvas_id: 'canvas' + this._uid.toString(),
-                        start_x: 0,
-                        end_x: 0,
                         timeline_start_time: now.clone().subtract(2.8, 'years'),
                         timeline_end_time: now.clone(),
-                        chart_time_from: now.clone().subtract(1, 'days'),
-                        chart_time_to: now.clone(),
-                        picker_time_from: now.clone().subtract(1, 'days'),
-                        picker_time_to: now.clone(),
-                        time_periods: [
-                            {value: '1-hours', text: 'hour'},
-                            {value: '1-days', text: 'day'},
-                            {value: '3-days', text: '3 days'},
-                            {value: '1-weeks', text: 'week'},
-                            {value: '2-weeks', text: '2 weeks'},
-                            {value: '1-months', text: 'month'},
-                            {value: '3-months', text: '3 months'},
-                            {value: '6-months', text: 'half year'},
-                            {value: '1-years', text: 'year'},
-                        ],
-                        selected_period: '1-hours',
-                        show_type: "period",
+                        start_x: 0,
+                        end_x: 0,
                         style: {
                             margin_lr: 5,
                             margin_tb: 5,
@@ -59,47 +75,34 @@
                     };
                 },
                 template: `
-                    <div>
-                        <div id="chart_filter_timeline">
-                            <div class="period chart_filter_group">
-                                <input class="radio1" type="radio" value="period" v-model="show_type" />
-                                <label for="timeline">Show last</label>
-                                <select v-model="selected_period" class="chart_filter_values" @change="update_time_period($event.target.value)">
-                                    <option v-for="period in time_periods" :value="period.value">
-                                        {{ period.text }}
-                                    </option>
-                                </select>
-                            </div>
-                            <div class="range chart_filter_group">
-                                <input class="radio1" type="radio" value="timerange" v-model="show_type"/>
-                                <label for="timeline">Show data between</label>
-                                <datetimepicker
-                                    v-model="picker_time_from"
-                                    :min_date="false"
-                                    :max_date="picker_time_to"
-                                ></datetimepicker>
-                                <datetimepicker
-                                    v-model="picker_time_to"
-                                    :min_date="picker_time_from"
-                                    :max_date="false"
-                                ></datetimepicker>
-                            </div>
-                            <div class="timeline_container">
-                                <canvas :id="canvas_id" width="1000" height="50"></canvas>
-                            </div>
-                        </div>
-                        <chart :time_from="chart_time_from" :time_to="chart_time_to"></chart>
-                        <chart :time_from="chart_time_from" :time_to="chart_time_to"></chart>
+                    <div class="timeline_container">
+                        <canvas :id="canvas_id" width="1000" height="50"></canvas>
                     </div>
                 `,
+                watch: {
+                    date_from: function(new_date) {
+                        var canvas_width = $('#' + this.canvas_id)[0].width;
+                        this.start_x = this.time2x(new_date, canvas_width);
+                        this.draw();
+                    },
+                    date_to: function(new_date) {
+                        // update the end of the timeline (else current time is out of range)
+                        this.timeline_end_time = moment();
+                        var canvas_width = $('#' + this.canvas_id)[0].width;
+                        this.end_x = this.time2x(new_date, canvas_width);
+                        this.draw();
+                    },
+                },
                 mounted: function() {
+                    var canvas = $('#' + this.canvas_id)[0];
+                    this.start_x = this.time2x(this.date_from, canvas.width),
+                    this.end_x = this.time2x(this.date_to, canvas.width),
                     this.draw();
                     // register listener on timeline
                     // - bind mousemove handler so it updates interval as needed
                     // - use setInterval to redraw canvas periodically
                     // - bind mouseup handler so it stops the whole process
                     $('#' + this.canvas_id).on('mousedown', function(e) {
-                        var canvas = $('#' + this.canvas_id)[0];
                         this.start_x = e.pageX - canvas.offsetLeft; // relative to canvas 
                         this.end_x = this.start_x + 1;
                         $(document).on('mousemove.timelineselector', function(e) {
@@ -117,14 +120,10 @@
                             // stop redrawing
                             clearInterval(this.redraw_interval);
                             // notify about time change
-                            var canvas = $('#' + this.canvas_id)[0];
-                            var start_time = this.x2time(this.start_x, canvas.width);
-                            var end_time = this.x2time(this.end_x, canvas.width);
-                            this.update_time_from(start_time);
-                            // wait one tick before updating time, so the min/max dates get
-                            // set correctly
-                            this.update_time_from(start_time);
-                            this.update_time_to(end_time);
+                            var start_date = this.x2time(Math.min(this.start_x, this.end_x), canvas.width);
+                            var end_date = this.x2time(Math.max(this.end_x, this.start_x), canvas.width);
+                            // because we have have max/min limits on date input order of updates matters
+                            this.$emit('timeline_selector_update', start_date, end_date);
                             return false;
                         }.bind(this));
                         // every 50ms this gets called to redraw canvas with information
@@ -140,41 +139,7 @@
                         this.should_repaint = true;
                     }.bind(this));
                 },
-                watch: {
-                    picker_time_from: function(new_val) {
-                        console.log(new_val);
-                    },
-                    picker_time_to: function(new_val) {
-                        console.log(new_val);
-                    },
-                    selected_period: function(new_val) {
-                    },
-                    show_type: function(type) {
-                        if (type === 'period') {
-                            this.update_time_period(this.selected_period);
-                        } else if (type ==='timerange') {
-                            this.update_time_from(this.picker_time_from);
-                            this.update_time_to(this.picker_time_to);
-                        }
-                    },
-                },
                 methods: {
-                    update_time_period: function(period) {
-                        this.show_type = 'period';
-                        var amount_unit = period.split('-');
-                        this.chart_time_to = moment() 
-                        this.chart_time_from = moment().subtract(amount_unit[0], amount_unit[1]);
-                    },
-                    update_time_from: function(time_from) {
-                        this.picker_time_from = time_from;
-                        this.chart_time_from = time_from;
-                        this.show_type = 'timerange';
-                    },
-                    update_time_to: function(time_to) {
-                        this.picker_time_to = time_to;
-                        this.chart_time_to = time_to;
-                        this.show_type = 'timerange';
-                    },
                     draw: function() {
                         // draw background and grid
                         var canvas = document.getElementById(this.canvas_id);
@@ -267,10 +232,11 @@
                     }
                 },
             });
+            
             Vue.component('datetimepicker', {
                 model: {
                     prop: 'date',
-                    event: 'date_change',
+                    event: 'change',
                 },
                 props: ['date', 'min_date', 'max_date'],
                 data: function() {
@@ -294,13 +260,17 @@
                     </div>
                 `,
                 watch: {
-                    min_date: function(date) {
+                    date: function(new_date) {
                         $('#' + this.dp_id).data('DateTimePicker')
-                            .minDate(date);
+                            .date(new_date);
                     },
-                    max_date: function(date) {
+                    min_date: function(new_date) {
                         $('#' + this.dp_id).data('DateTimePicker')
-                            .maxDate(date);
+                            .minDate(new_date);
+                    },
+                    max_date: function(new_date) {
+                        $('#' + this.dp_id).data('DateTimePicker')
+                            .maxDate(new_date);
                     },
                 },
                 mounted: function() {
@@ -310,81 +280,13 @@
                         .maxDate(this.max_date)
                         .minDate(this.min_date);
                     $('#' + this.dp_id).on('dp.hide', function(e) {
-                        this.$emit('date_change', e.date);
+                        this.$emit('change', e.date);
                     }.bind(this));
                 },
             }),
-            Vue.component('datetimepicker_from_to', {
-                props: ['time_from', 'time_to'],
-                data: function() {
-                    return {
-                        dp_from_id: 'datetimepicker_from' + this._uid.toString(),
-                        dp_to_id: 'datetimepicker_to' + this._uid.toString(),
-                        dp_options: {
-                            sideBySide: true,
-                            keepInvalid: true,
-                            format: 'YYYY/MM/DD HH:mm',
-                            useCurrent: false,
-                            showClose: true,
-                            showClear: true,
-                            showTodayButton: true,
-                            toolbarPlacement: 'bottom',
-                            debug: false,
-                        },
-                    };
-                },
-                watch: {
-                    time_from: function(time) {
-                        $('#' + this.dp_from_id).data('DateTimePicker').date(time);
-                    },
-                    time_to: function(time) {
-                        $('#' + this.dp_to_id).data('DateTimePicker').date(time);
-                    },
-                },
-                template: `
-                    <div class="container" style="width: 500px; margin: 0px 0px 0px 0px;">
-                        <div class="row">
-                            <div class="col-md-5">
-                                <input type="text" class="form-control" :id="dp_from_id" />
-                            </div>
-                            <div class="col-md-5">
-                                <input type="text" class="form-control" :id="dp_to_id" />
-                            </div>
-                        </div>
-                    </div>
-                `,
-                mounted: function() {
-                    var dp_from_selector = '#' + this.dp_from_id;
-                    var dp_to_selector = '#' + this.dp_to_id;
-                    $(dp_from_selector).datetimepicker(this.dp_options)
-                        .data('DateTimePicker').date(this.time_from)
-                        .maxDate(this.time_to);
-                    $(dp_to_selector).datetimepicker(this.dp_options)
-                        .data('DateTimePicker').date(this.time_to)
-                        .minDate(this.time_from);
-                    // link the pickers together 
-                    $(dp_from_selector).on('dp.change', function(e) {
-                        $(dp_to_selector).data('DateTimePicker').minDate(e.date);
-                    });
-                    $(dp_to_selector).on('dp.change', function(e) {
-                        $(dp_from_selector).data('DateTimePicker').maxDate(e.date);
-                    });
-                    $(dp_from_selector).on('dp.hide', function(e) {
-                        // sometimes it happens that the internal date of the picker
-                        // is updated, but it is not shown in the input filed,
-                        // so we update the value here again manually, to reassure
-                        // that internal and displayed date are in sync.
-                        $(dp_from_selector).data('DateTimePicker').date(e.date);
-                        this.$emit('time_from_change', e.date);
-                    }.bind(this));
-                    $(dp_to_selector).on('dp.hide', function(e) {
-                        $(dp_to_selector).data('DateTimePicker').date(e.date);
-                        this.$emit('time_to_change', e.date);
-                    }.bind(this));
-                },
-            }),
+           
             Vue.component('chart', {
-                props: ['time_from', 'time_to'],
+                props: ['date_to', 'date_from'],
                 data: function() {
                     return {
                         id: this._uid.toString(),
@@ -481,19 +383,19 @@
                     this.draw_initial();
                 },
                 watch: {
+                    // redraw chart when date changes
+                    date_to: function(new_date) {
+                        this.draw_initial();
+                    },
+                    // redraw chart when date changes
+                    date_from: function(new_date) {
+                        this.draw_initial();
+                    },
                     selection_mode: function(newVal) {
                         this.toggle_selection_mode();
                     },
                     legend: function(newVal) {
                         this.draw();
-                    },
-                    time_from: function(newVal) {
-                        // this.clear_chart_canvas();
-                        this.draw_initial();
-                    },
-                    time_to: function(newVal) {
-                        // this.clear_chart_canvas();
-                        this.draw_initial();
                     },
                 },
                 methods: {
@@ -528,8 +430,8 @@
                                 context: this,
                                 url: 'http://localhost:5000/chartdata',
                                 data: {
-                                    time_from: this.time_from.unix(),
-                                    time_to: this.time_to.unix(),
+                                    time_from: this.date_from.unix(),
+                                    time_to: this.date_to.unix(),
                                 },
                             })
                             .done(function(response){
@@ -740,6 +642,75 @@
             })
             new Vue({
                 el: '#app',
+                data: function() {
+                    return {
+                        chart_date_from: moment().subtract(1, 'days'),
+                        chart_date_to: moment(),
+                        picker_time_from: moment().subtract(1, 'days'),
+                        picker_time_to: moment().clone(),
+                        selected_period: '1-hours',
+                        time_selection_type: "period",
+                        time_periods: [
+                            {value: '1-hours', text: 'hour'},
+                            {value: '1-days', text: 'day'},
+                            {value: '3-days', text: '3 days'},
+                            {value: '1-weeks', text: 'week'},
+                            {value: '2-weeks', text: '2 weeks'},
+                            {value: '1-months', text: 'month'},
+                            {value: '3-months', text: '3 months'},
+                            {value: '6-months', text: 'half year'},
+                            {value: '1-years', text: 'year'},
+                        ],
+                    };
+                },
+                watch: {
+                    // change chart date when picker date changes
+                    picker_time_from: function(new_val) {
+                        this.chart_date_from = new_val;
+                    },
+                    picker_time_to: function(new_val) {
+                        this.chart_date_to = new_val;
+                    },
+                },
+                methods: {
+                    period_selected: function() {
+                        var dates = this.get_dates_from_period(this.selected_period);
+                        this.chart_date_from = dates.date_from;
+                        this.chart_date_to = dates.date_to;
+                    },
+                    timerange_selected: function() {
+                        this.chart_date_from = this.picker_time_from;
+                        this.chart_date_to = this.picker_time_to;
+                    },
+                    period_changed: function() {
+                        this.time_selection_type = 'period';
+                        var dates = this.get_dates_from_period(this.selected_period);
+                        this.chart_date_from = dates.date_from;
+                        this.chart_date_to = dates.date_to;
+                    },
+                    get_dates_from_period: function(period) {
+                        var amount_unit = period.split('-');
+                        return {
+                            date_to: moment(),
+                            date_from: moment().subtract(amount_unit[0], amount_unit[1]),
+                        };
+                    },
+                    timeline_selector_update: function(start_date, end_date) {
+                        this.time_selection_type = 'timerange';
+                        if (start_date.isAfter(this.picker_time_to)){
+                            this.picker_time_to = end_date;
+                            // wait one tick before updating time_to (so min/max date wont clash)
+                            this.$nextTick(function() {
+                                this.picker_time_from = start_date;
+                            })
+                        } else {
+                            this.picker_time_from = start_date;
+                            this.$nextTick(function() {
+                                this.picker_time_to = end_date;
+                            });
+                        }
+                    },
+                },
             });
         </script>
     </body>
